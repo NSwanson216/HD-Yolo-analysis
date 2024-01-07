@@ -302,22 +302,3 @@ def main(input_dir, output_dir, ploidy_dir, threshold):#args, threshold):
     return ploidy_values
     #os.makedirs(output_dir, mode=0o777, exist_ok=True)   
     #ploidy_values.to_csv(output_dir)
-
-
-
-""" if __name__ == '__main__':
-    parser = argparse.ArgumentParser('Ploidy calculations for nuclei segmented tiles.', add_help=True)
-    parser.add_argument('--input_dir', required=True, type=str, help="Input folder data directory. Should be in the form of '/parent_folder/sample_folder/nuclei_segmentation_csvs'")
-    parser.add_argument('--output_dir', required=True, type=str, help="Output folder directory." )
-    parser.add_argument('--ploidy_dir', required=True, type=str, help="File which holds both sample ID and corresponding ploidy values.")
-    parser.add_argument('--features')
-    args = parser.parse_args()
-    main(args, threshold)
- """
-
-"""if __name__ == '__main__':
-    input_dir = r"C:\Users\fiddl\IDC-GDC\CCG-MILD\test_patches_masks"
-    output_dir = r"C:\\Users\\fiddl\\IDC-GDC\\CCG-MILD\\output"
-    ploidy_dir = r"G:\My Drive\ISB - Work\Texture Analysis\Clinical Data\MILD\MILD_WGD_TRUNCATED.csv"
-    main(input_dir, output_dir, ploidy_dir, threshold)
-"""
