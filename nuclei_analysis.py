@@ -320,8 +320,4 @@ def main(input_dir, output_dir, ploidy_dir, threshold):#args, threshold):
     output_dir = r"C:\\Users\\fiddl\\IDC-GDC\\CCG-MILD\\output"
     ploidy_dir = r"G:\My Drive\ISB - Work\Texture Analysis\Clinical Data\MILD\MILD_WGD_TRUNCATED.csv"
     main(input_dir, output_dir, ploidy_dir, threshold)
-    """
-
-
-
-
+"""
