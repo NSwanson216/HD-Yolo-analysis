@@ -46,22 +46,34 @@ class Vector:
         return f'({self.x}, {self.y})'
 
 
-def nuclei_ratios(input_dir):
+def nuclei_ratios(input_dir, with_parent=False):
     #check the average score of the nuclei segmentation 
     length_sum = 0
     total_nuclei = 0
 
-    for item in os.listdir(input_dir):
-        folder = os.path.join(input_dir, item)
-        for sub_item in os.listdir(folder):
-            if os.path.splitext(sub_item)[1] == '.csv':
-                df_path = os.path.join(folder, sub_item)
-                df = pd.read_csv(df_path, sep=',')
-                temp = df.loc[df['label'] != -100]
-                total_nuclei += len(temp)
-                scores = np.array(temp['score'])
-                length_sum += np.sum(scores)
-
+    if with_parent == True:
+        for item in os.listdir(input_dir):
+            folder = os.path.join(input_dir, item)
+            for sub_item in os.listdir(folder):
+                if os.path.splitext(sub_item)[1] == '.csv':
+                    df_path = os.path.join(folder, sub_item)
+                    df = pd.read_csv(df_path, sep=',')
+                    temp = df.loc[df['label'] != -100]
+                    total_nuclei += len(temp)
+                    scores = np.array(temp['score'])
+                    length_sum += np.sum(scores)
+    elif with_parent == False:
+        for sub_item in os.listdir(input_dir):
+                if os.path.splitext(sub_item)[1] == '.csv':
+                    df_path = os.path.join(input_dir, sub_item)
+                    df = pd.read_csv(df_path, sep=',')
+                    temp = df.loc[df['label'] != -100]
+                    total_nuclei += len(temp)
+                    scores = np.array(temp['score'])
+                    length_sum += np.sum(scores)
+    else:
+        ValueError
+        
     return length_sum / total_nuclei
 
 
