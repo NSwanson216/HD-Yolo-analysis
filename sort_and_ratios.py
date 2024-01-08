@@ -3,6 +3,15 @@
 from nuclei_analysis import *
 import argparse
 
+def remove_files(input_dir, ext='.csv'):
+    TBD = []
+    for file in os.listdir(input_dir):
+        file_path = os.path.join(input_dir, file)
+        if os.path.splitext(file)[1] != ext:
+            TBD.append(file_path)
+    for item in TBD:
+        os.remove(item)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Accuracy of nuclei segmentation scores.')
     parser.add_argument('--input_dir', required=True, type=str)
