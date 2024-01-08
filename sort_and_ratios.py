@@ -11,8 +11,7 @@ def remove_files(input_dir, ext='.csv'):
             TBD.append(file_path)
     for item in TBD:
         os.remove(item)
-
-        #printing some spaghoot
+        
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Accuracy of nuclei segmentation scores.')
