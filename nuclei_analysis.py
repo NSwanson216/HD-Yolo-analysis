@@ -215,6 +215,8 @@ def area_distribution(nuclei_area):
 def calculate_ploidy(input_dir, ploidy_values, ground_truth, threshold):
     c_ploidy, n_ploidy = 0, 0
     nuclei_area = pd.Series(dtype=object)
+    raw_areas, perims, max_dist, min_dist = pd.Series(dtype=object), pd.Series(dtype=object), pd.Series(dtype=object), pd.Series(dtype=object)
+    circuls, eccents, solids = pd.Series(dtype=object), pd.Series(dtype=object), pd.Series(dtype=object)
         
     for csv_file in os.listdir(input_dir):
         if os.path.splitext(csv_file)[1] == '.csv':
@@ -263,33 +265,88 @@ def calculate_ploidy(input_dir, ploidy_values, ground_truth, threshold):
             denom += len(nuclei_list)
 
             if denom == 0:
-                # print('stop here')
                 continue
             
             c_ploidy += (numer / denom)
 
-
             #calc area for each nuclei and compare it against a distribution to determine it's nuclear ploidy
             nuclei_area = pd.concat((nuclei_area, areas))
+
+            # somehow take these and include them into the csv file
+            # they are per tile, but we need them per sample - maybe save them as a list in a single df entry per sample (perimeter holds a comma
+            # seperated list of all of the perimeter entries) and then expand that list when it comes to using it for ML
+            # we could duplicate the rest of the stagnant values and then use these new values as a way to seperate each tile, all under the 
+            # label of a single sample(? - but this brings back the issue of heterogeneity
+
+            # take mean and stddev from each feature 
             
+            for X, Y, counter in zip(poly_x, poly_y, range(len(poly_x))):
+                raw_areas_temp = area(X, Y)
+                raw_areas = pd.concat((raw_areas, raw_areas_temp))
+                perims_temp = perimeter(X, Y)
+                perims = pd.concat((perims, perims_temp))
+                max_dist_temp, min_dist_temp = axis_length(X, Y)
+                max_dist = pd.concat((max_dist, max_dist_temp))
+                min_dist = pd.concat((min_dist, min_dist_temp))
+                circuls_temp = circularity(raw_areas_temp, perims_temp)
+                circuls = pd.concat((circuls, circuls_temp))
+                eccents_temp = eccentricity(max_dist_temp, min_dist_temp)
+                eccents = pd.concat((eccents, eccents_temp))
+                solids_temp = solidity(X, Y, raw_areas_temp)
+                solids = pd.concat((solids, solids_temp))
+
+
             del denom, numer, multi_nuclei_dict, multi_nuclei_list, multi_nuclei_df, nuclei_list, 
             centroids, centroids_arr, centroids_df
             
 
     n_ploidy = area_distribution(nuclei_area)
+    areas = np.mean(raw_areas)
+    areas_std = np.std(raw_areas)
+    perimeters = np.mean(perims)
+    perimeters_std = np.std(perims)
+    major_axis = np.mean(max_dist)
+    major_axis_std = np.std(max_dist)
+    minor_axis = np.mean(min_dist)
+    minor_axis_std = np.std(min_dist)
+    circularities = np.mean(circuls)
+    circularities_std = np.std(circuls)
+    eccentricities = np.mean(eccents)
+    eccentricities_std = np.std(eccents)
+    solidities = np.mean(solids)
+    solidities_std = np.std(solids)
+
 
     ploidy_values.loc[csv_file[0:9], 'ground_truth'] = ground_truth.loc[csv_file[0:9], 'Ploidy']
     ploidy_values.loc[csv_file[0:9], 'n_ploidy'] = n_ploidy
     ploidy_values.loc[csv_file[0:9], 'c_ploidy'] = c_ploidy / len(os.listdir(input_dir))
+
+    ploidy_values.loc[csv_file[0:9], 'area'] = areas
+    ploidy_values.loc[csv_file[0:9], 'area_std'] = areas_std
+    ploidy_values.loc[csv_file[0:9], 'perimeter'] = perimeters
+    ploidy_values.loc[csv_file[0:9], 'perimeter_std'] = perimeters_std
+    ploidy_values.loc[csv_file[0:9], 'major_axis'] = major_axis
+    ploidy_values.loc[csv_file[0:9], 'major_axis_std'] = major_axis_std
+    ploidy_values.loc[csv_file[0:9], 'minor_axis'] = minor_axis
+    ploidy_values.loc[csv_file[0:9], 'minor_axis_std'] = minor_axis_std
+    ploidy_values.loc[csv_file[0:9], 'circularity'] = circularities
+    ploidy_values.loc[csv_file[0:9], 'circularity_std'] = circularities_std
+    ploidy_values.loc[csv_file[0:9], 'eccentricity'] = eccentricities
+    ploidy_values.loc[csv_file[0:9], 'eccentricity_std'] = eccentricities_std
+    ploidy_values.loc[csv_file[0:9], 'solidity'] = solidities
+    ploidy_values.loc[csv_file[0:9], 'solidity_std'] = solidities_std
+
     
-    del areas, c_ploidy, counter, counter2, counter_name
+    del areas, c_ploidy, n_ploidy, counter, counter2, counter_name
     
     return ploidy_values
             
 
 def main(input_dir, output_dir, ploidy_dir, threshold):#args, threshold):
     output_dir = os.path.join(output_dir, 'ploidy_values.csv')#args.output_dir, 'ploidy_values.csv')
-    ploidy_values = pd.DataFrame( columns=['Sample_ID', 'c_ploidy', 'n_ploidy', 'ground_truth'] )
+    ploidy_values = pd.DataFrame( columns=['Sample_ID', 'c_ploidy', 'n_ploidy', 'ground_truth', 'area', 'area_std', 'perimeter', 'perimeter_std',
+                                           'major_axis', 'major_axis_std', 'minor_axis', 'minor_axis_std', 'circularity', 'circularity_std',
+                                           'eccentricity', 'eccentricity_std', 'solidity', 'solidity_std'] )
     ploidy_values.set_index('Sample_ID', inplace=True)
 
     ground_truth = pd.read_csv(ploidy_dir, sep=',')
