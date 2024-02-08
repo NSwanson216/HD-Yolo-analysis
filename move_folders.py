@@ -24,7 +24,8 @@ if __name__ == '__main__':
     for i in range(1, 6):
         subset_name = 'subset_' + str(i)
         new_dir.append(os.path.join(subset_path, subset_name))
-        os.mkdir(new_dir[i-1])
+        if os.path.exists(new_dir[i-1]) != True:
+            os.mkdir(new_dir[i-1])
     i = 0
     for name in os.listdir(src):
         if i == 0:
