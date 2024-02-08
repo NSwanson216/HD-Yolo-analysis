@@ -29,23 +29,23 @@ if __name__ == '__main__':
     for name in os.listdir(src):
         if i == 0:
             full_path = os.path.join(src, name)
-            shutil.copy(full_path, new_dir[i])
+            shutil.copytree(full_path, new_dir[i])
             i = 1
         elif i == 1:
             full_path = os.path.join(src, name)
-            shutil.copy(full_path, new_dir[i])
+            shutil.copytree(full_path, new_dir[i])
             i = 2
         elif i == 2:
             full_path = os.path.join(src, name)
-            shutil.copy(full_path, new_dir[i])
+            shutil.copytree(full_path, new_dir[i])
             i = 3
         elif i == 3:
             full_path = os.path.join(src, name)
-            shutil.copy(full_path, new_dir[i])
+            shutil.copytree(full_path, new_dir[i])
             i = 4
         elif i == 4:
             full_path = os.path.join(src, name)
-            shutil.copy(full_path, new_dir[i])
+            shutil.copytree(full_path, new_dir[i])
             i = 0
 
 
