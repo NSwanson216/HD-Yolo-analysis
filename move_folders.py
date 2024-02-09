@@ -28,26 +28,14 @@ if __name__ == '__main__':
             os.mkdir(new_dir[i-1])
     i = 0
     for name in os.listdir(src):
-        if i == 0:
-            full_path = os.path.join(src, name)
-            shutil.copytree(full_path, new_dir[i])
-            i = 1
-        elif i == 1:
-            full_path = os.path.join(src, name)
-            shutil.copytree(full_path, new_dir[i])
-            i = 2
-        elif i == 2:
-            full_path = os.path.join(src, name)
-            shutil.copytree(full_path, new_dir[i])
-            i = 3
-        elif i == 3:
-            full_path = os.path.join(src, name)
-            shutil.copytree(full_path, new_dir[i])
-            i = 4
-        elif i == 4:
-            full_path = os.path.join(src, name)
-            shutil.copytree(full_path, new_dir[i])
+        full_path = os.path.join(src, name)
+        new_path = os.path.join(new_dir[i], name)
+        copy_tree(full_path, new_path)
+        if i == 4:
             i = 0
+        else:
+            i += 1
+        del full_path, new_path
 
 
 
