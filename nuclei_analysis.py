@@ -5,12 +5,15 @@ import scipy.spatial as scp
 import matplotlib.pyplot as plt
 import seaborn
 import argparse
+import sklearn.preprocessing as preprocessing
+from sklearn.decomposition import FactorAnalysis, FastICA, PCA, KernelPCA, SparseCoder, DictionaryLearning
+from sklearn import manifold
+import scipy 
+import torch
 
-#threshold = 15.54 #placeholder threshold from the liver cancer version
-#threshold = 20 # this will be replaced as we work through it and find a suitable value
+import nuclei_analysis_color as nac
 
-#nuclei_area_distribution =  #temp distribution - use mean ploidy of each slide(?
-
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
 checker = []
 
 class Dictlist(dict):
@@ -21,29 +24,6 @@ class Dictlist(dict):
         except KeyError:
             super(Dictlist, self).__setitem__(key, [])
         self[key].append(value)
-
-
-class Vector:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
-    def __sub__(self, other):
-        return Vector(self.x - other.x, self.y - other.y)
-    def __add__(self, other):
-        return Vector(self.x + other.x, self.y + other.y)
-    def dot(self, other):
-        return self.x * other.x + self.y * other.y
-    def norm(self):
-        return self.dot(self)**0.5
-    def normalized(self):
-        norm = self.norm()
-        return Vector(self.x / norm, self.y / norm)
-    def perp(self):
-        return Vector(1, -self.x / self.y)
-    def __mul__(self, scalar):
-        return Vector(self.x * scalar, self.y * scalar)
-    def __str__(self):
-        return f'({self.x}, {self.y})'
 
 
 def nuclei_ratios(input_dir, with_parent=False):
@@ -104,8 +84,9 @@ def area(X, Y):
 def perimeter(X, Y):
     X = np.array(X.split(','), dtype=float)
     Y = np.array(Y.split(','), dtype=float)
+    P_value = np.sum( np.sqrt((X - np.roll(X,-1))**2 + (Y - np.roll(Y,-1))**2) )
 
-    return np.sum( np.sqrt((X - np.roll(X,-1))**2 + (Y - np.roll(Y,-1))**2) )
+    return P_value
     
 
 def axis_length(X, Y):
@@ -118,34 +99,54 @@ def axis_length(X, Y):
             distances[i,j] = np.sqrt( (X[i] - X[j])**2 + (Y[i] - Y[j])**2 )
     
     max_dist = np.amax(distances)
-    
-    ind = np.unravel_index(np.argmax(distances, axis=None), distances.shape)
-    ind = np.array(ind)
-    XY = Vector(X[ind[0]], Y[ind[0]]) - Vector(X[ind[1]], Y[ind[1]])
-    XY_normed = XY.perp().normalized()
-    P1 = Vector(X[ind[1]], Y[ind[1]]) + XY_normed * 3
-    P2 = Vector(X[ind[1]], Y[ind[1]]) - XY_normed * 3
-   
-    min_dist = np.sqrt( (P1.x - P2.x)**2 + (P1.y - P2.y)**2 )
-    
+    max_dist_coord = np.unravel_index(np.argmax(distances, axis=None), distances.shape)
+
+    My = (Y[max_dist_coord[1]] + Y[max_dist_coord[0]]) / 2
+    Mx = (X[max_dist_coord[1]] + X[max_dist_coord[0]]) / 2
+
+    rho_M = max_dist / 2
+
+    M = np.array([ X[max_dist_coord[0]] - Mx, Y[max_dist_coord[0]] - My])
+
+    Θ_range = [(17 * np.pi) / 36, (19 * np.pi) / 36]
+    Θ1, Θ2 = 1, 1
+
+    while Θ1 > np.cos(Θ_range[0]) and Θ2 > np.cos(Θ_range[0]):
+        for i in range(len(X)):
+            if Θ1 > np.cos(Θ_range[0]):
+                px1, py1 = X[max_dist_coord[0] + i], Y[max_dist_coord[0] + i]
+                Θ1, rho_P1 = find_Θ(Mx, My, M, px1, py1, rho_M)
+            if Θ2 > np.cos(Θ_range[0]):
+                px2, py2 = X[max_dist_coord[0] - i], Y[max_dist_coord[0] - i]
+                Θ2, rho_P2 = find_Θ(Mx, My, M, px2, py2, rho_M)
+
+    min_dist = rho_P1 + rho_P2
+
     return max_dist, min_dist
-    
-    
+
+
+def find_Θ(Mx, My, M, px, py, rho_M):
+    rho_P = np.sqrt(( Mx - px)**2 + (My - py)**2 )
+    P = np.array([px - Mx, py - My])
+    Θ = (np.dot(M, P)) / (np.abs(rho_M) * np.abs(rho_P))
+    return Θ, rho_P
+
+
 def circularity(A, P):
     return (P**2) / (4 * np.pi * A)
     
 
 def eccentricity(max_dist, min_dist):
-    return np.sqrt( 1 - ( max_dist**2 / min_dist**2 ))
+    return (1 - min_dist/max_dist)
 
 
-def solidity(X, Y, A):
+def solidity(X, Y, A): #the values of the maxes of solidity differ by ~10^-13
     X = np.array(X.split(','), dtype=float)
     Y = np.array(Y.split(','), dtype=float)
     XY = np.column_stack((X.T, Y.T))
     # A / area_of_convex_hull
     convex_hull = scp.ConvexHull(points=XY, qhull_options='QG4')
-    return A / convex_hull.volume()
+    return A / convex_hull.volume
 
     
 def rel_distance(coord_0, coord_1):
@@ -159,15 +160,6 @@ def rel_distance(coord_0, coord_1):
 
 def delete_duplicates(dict1):
     check, TBD = [], []
-
-    #df = pd.DataFrame.from_dict(dict1, orient='index')
-    #lengths = []
-    #for val in dict1.values():
-    #    lengths.append(len(val))
-    #df['length'] = lengths
-    #df.sort_values('length', inplace=True, ascending=False)
-    ##continue to workshop this part
-    #dict1 = df.T.to_dict(orient='list')
     
     for key, value in dict1.items():
         for val in value:
@@ -212,21 +204,64 @@ def area_distribution(nuclei_area):
     return mean
     
 
-def calculate_ploidy(input_dir, ploidy_values, ground_truth, threshold):
+def dataset_transformaiton(temp_matrix):
+    return_list = []
+
+    means = np.mean(temp_matrix, axis=0)
+    return_list.append(means)
+
+    maxes = np.max(temp_matrix, axis=0) 
+    return_list.append(maxes)
+    
+    temp_matrix = torch.from_numpy(temp_matrix.T)
+    temp_matrix = temp_matrix.cuda()
+    U, sigma, V = torch.svd(temp_matrix)
+    U = U.cpu().numpy()
+    sigma = sigma.cpu().numpy()
+    V = V.cpu().numpy()
+    sigma = np.diag(sigma)
+    V = V[0:15,0:15]
+    A = U @ sigma @ V
+    eigvals, eigenvector = np.linalg.eig(A)
+    index = eigvals.argsort()[::-1]
+    eigvals = eigvals[index]
+    eigenvector = eigenvector[:,index]
+    leading_eigenvector = eigenvector[:,0]
+    leading_3_eigenvectors = np.concatenate( (eigenvector[:,0], eigenvector[:,1], eigenvector[:,2]), axis=0 )
+    return_list.append(leading_eigenvector)
+    return_list.append(leading_3_eigenvectors)
+
+    del temp_matrix, U, sigma, V, A
+
+    return return_list
+
+    
+
+
+def calculate_ploidy(input_dir, image_dir):
     c_ploidy, n_ploidy = 0, 0
     nuclei_area = pd.Series(dtype=object)
     raw_areas, perims, max_dist, min_dist = pd.Series(dtype=object), pd.Series(dtype=object), pd.Series(dtype=object), pd.Series(dtype=object)
     circuls, eccents, solids = pd.Series(dtype=object), pd.Series(dtype=object), pd.Series(dtype=object)
-        
+    color_feat_df_temp = pd.DataFrame(columns=['gray_mean', 'gray_std', 'saturation_mean', 'saturation_std', 
+                                          'A_mean', 'A_std', 'B_mean', 'B_std'])
+    
+
     for csv_file in os.listdir(input_dir):
         if os.path.splitext(csv_file)[1] == '.csv':
+            for img_name in os.listdir(image_dir):
+                if os.path.splitext(img_name)[0] == os.path.splitext(csv_file)[0][:-5]:
+                    img_file = img_name
+                    break
             df_path = os.path.join(input_dir, csv_file)
             df = pd.read_csv(df_path, sep=',')
-            temp = df.loc[df['label'] != -100]
+            temp = df
 
             poly_x = list(temp['poly_x'])
             poly_y = list(temp['poly_y'])
-             
+            if len(poly_x) == 0:
+                continue
+            '''
             centroids = np.zeros((len(poly_x), 2), dtype=object)
             counter_name = []
             areas = np.zeros((len(poly_x)))
@@ -269,93 +304,104 @@ def calculate_ploidy(input_dir, ploidy_values, ground_truth, threshold):
             
             c_ploidy += (numer / denom)
 
-            #calc area for each nuclei and compare it against a distribution to determine it's nuclear ploidy
             nuclei_area = pd.concat((nuclei_area, areas))
-
-            # somehow take these and include them into the csv file
-            # they are per tile, but we need them per sample - maybe save them as a list in a single df entry per sample (perimeter holds a comma
-            # seperated list of all of the perimeter entries) and then expand that list when it comes to using it for ML
-            # we could duplicate the rest of the stagnant values and then use these new values as a way to seperate each tile, all under the 
-            # label of a single sample(? - but this brings back the issue of heterogeneity
-
-            # take mean and stddev from each feature 
+            '''
             
             for X, Y, counter in zip(poly_x, poly_y, range(len(poly_x))):
-                raw_areas_temp = area(X, Y)
-                raw_areas = pd.concat((raw_areas, raw_areas_temp))
-                perims_temp = perimeter(X, Y)
-                perims = pd.concat((perims, perims_temp))
-                max_dist_temp, min_dist_temp = axis_length(X, Y)
-                max_dist = pd.concat((max_dist, max_dist_temp))
-                min_dist = pd.concat((min_dist, min_dist_temp))
-                circuls_temp = circularity(raw_areas_temp, perims_temp)
-                circuls = pd.concat((circuls, circuls_temp))
-                eccents_temp = eccentricity(max_dist_temp, min_dist_temp)
-                eccents = pd.concat((eccents, eccents_temp))
-                solids_temp = solidity(X, Y, raw_areas_temp)
-                solids = pd.concat((solids, solids_temp))
+                try:
+                    raw_areas_temp = area(X, Y)
+                    raw_areas = pd.concat((raw_areas, pd.Series(raw_areas_temp)))
+                    perims_temp = perimeter(X, Y)
+                    perims = pd.concat((perims, pd.Series(perims_temp)))
+                    max_dist_temp, min_dist_temp = axis_length(X, Y)
+                    max_dist = pd.concat((max_dist, pd.Series(max_dist_temp)))
+                    min_dist = pd.concat((min_dist, pd.Series(min_dist_temp)))
+                    circuls_temp = circularity(raw_areas_temp, perims_temp)
+                    circuls = pd.concat((circuls, pd.Series(circuls_temp)))
+                    eccents_temp = eccentricity(max_dist_temp, min_dist_temp)
+                    eccents = pd.concat((eccents, pd.Series(eccents_temp)))
+                    solids_temp = solidity(X, Y, raw_areas_temp)
+                    solids = pd.concat((solids, pd.Series(solids_temp)))
+                    
+                except:
+                    pass
+                
 
-
+            
+            img_path = os.path.join(image_dir, img_file)
+            color_feat_df_temp = nac.main(img_path, poly_x, poly_y, color_feat_df_temp)
+           
+            '''
             del denom, numer, multi_nuclei_dict, multi_nuclei_list, multi_nuclei_df, nuclei_list, 
-            centroids, centroids_arr, centroids_df
+            centroids, centroids_arr, centroids_df, 
+            '''
+            del raw_areas_temp, perims_temp, max_dist_temp, min_dist_temp,
+            circuls_temp, eccents_temp, solids_temp
+            
+            
+    temp_matrix = np.zeros((len(color_feat_df_temp), 15))
+    temp_matrix[:,0] = raw_areas
+    temp_matrix[:,1] = perims
+    temp_matrix[:,2] = max_dist
+    temp_matrix[:,3] = min_dist
+    temp_matrix[:,4] = circuls
+    temp_matrix[:,5] = eccents
+    temp_matrix[:,6] = solids
+    temp_matrix[:,7] = color_feat_df_temp['gray_mean']
+    temp_matrix[:,8] = color_feat_df_temp['gray_std']
+    temp_matrix[:,9] = color_feat_df_temp['saturation_mean']
+    temp_matrix[:,10] = color_feat_df_temp['saturation_std']
+    temp_matrix[:,11] = color_feat_df_temp['A_mean']
+    temp_matrix[:,12] = color_feat_df_temp['A_std']
+    temp_matrix[:,13] = color_feat_df_temp['B_mean']
+    temp_matrix[:,14] = color_feat_df_temp['B_std']
+    
+    temp_matrix = temp_matrix[~np.isnan(temp_matrix).any(axis=1), :]
+
+    datasets = []
+    datasets = dataset_transformaiton(temp_matrix)
+    
+    del c_ploidy, n_ploidy, counter, raw_areas, perims, max_dist, min_dist, circuls, eccents, solids, color_feat_df_temp,
+    nuclei_area, temp_matrix #areas, counter2, counter_name
+    
+    return datasets
             
 
-    n_ploidy = area_distribution(nuclei_area)
-    areas = np.mean(raw_areas)
-    areas_std = np.std(raw_areas)
-    perimeters = np.mean(perims)
-    perimeters_std = np.std(perims)
-    major_axis = np.mean(max_dist)
-    major_axis_std = np.std(max_dist)
-    minor_axis = np.mean(min_dist)
-    minor_axis_std = np.std(min_dist)
-    circularities = np.mean(circuls)
-    circularities_std = np.std(circuls)
-    eccentricities = np.mean(eccents)
-    eccentricities_std = np.std(eccents)
-    solidities = np.mean(solids)
-    solidities_std = np.std(solids)
-
-
-    ploidy_values.loc[csv_file[0:9], 'ground_truth'] = ground_truth.loc[csv_file[0:9], 'Ploidy']
-    ploidy_values.loc[csv_file[0:9], 'n_ploidy'] = n_ploidy
-    ploidy_values.loc[csv_file[0:9], 'c_ploidy'] = c_ploidy / len(os.listdir(input_dir))
-
-    ploidy_values.loc[csv_file[0:9], 'area'] = areas
-    ploidy_values.loc[csv_file[0:9], 'area_std'] = areas_std
-    ploidy_values.loc[csv_file[0:9], 'perimeter'] = perimeters
-    ploidy_values.loc[csv_file[0:9], 'perimeter_std'] = perimeters_std
-    ploidy_values.loc[csv_file[0:9], 'major_axis'] = major_axis
-    ploidy_values.loc[csv_file[0:9], 'major_axis_std'] = major_axis_std
-    ploidy_values.loc[csv_file[0:9], 'minor_axis'] = minor_axis
-    ploidy_values.loc[csv_file[0:9], 'minor_axis_std'] = minor_axis_std
-    ploidy_values.loc[csv_file[0:9], 'circularity'] = circularities
-    ploidy_values.loc[csv_file[0:9], 'circularity_std'] = circularities_std
-    ploidy_values.loc[csv_file[0:9], 'eccentricity'] = eccentricities
-    ploidy_values.loc[csv_file[0:9], 'eccentricity_std'] = eccentricities_std
-    ploidy_values.loc[csv_file[0:9], 'solidity'] = solidities
-    ploidy_values.loc[csv_file[0:9], 'solidity_std'] = solidities_std
-
+def main(input_dir,image_dir, output_list):
+     
+    #ground_truth = pd.read_csv(ploidy_dir, sep=',')
+    #ground_truth.set_index('Submitter ID', inplace=True)
     
-    del areas, c_ploidy, n_ploidy, counter, counter2, counter_name
+    img_names = []
+   
+    for sub_folder in os.listdir(input_dir):
+        for img_folder in os.listdir(image_dir):
+            if img_folder == sub_folder:
+                sub_img = img_folder
+                break
+        sub_input = os.path.join(input_dir, sub_folder)
+        sub_img_input = os.path.join(image_dir, sub_img)
+        datasets = calculate_ploidy(sub_input, sub_img_input)
+        csv_names = []
+        for output_dir in output_list:
+            csv_names.append(os.path.join(output_dir, (sub_folder + '.csv')))
+        
+        for dataset, csv_name in zip(datasets, csv_names):
+            if len(dataset) < 2:
+                dataset = np.array([dataset]).T
+            else:
+                dataset = np.array([dataset])
+
+            try:   
+                dataset = pd.DataFrame(dataset)
+            except:
+                dataset = pd.DataFrame(dataset[:,:,0])
+            dataset.to_csv(csv_name)
+
+
+        sep='.'
+        img_name = sub_folder.split(sep,1)[0]
+        img_names.append(img_name)
+
+    return img_names
     
-    return ploidy_values
-            
-
-def main(input_dir, output_dir, ploidy_dir, threshold):#args, threshold):
-    output_dir = os.path.join(output_dir, 'ploidy_values.csv')#args.output_dir, 'ploidy_values.csv')
-    ploidy_values = pd.DataFrame( columns=['Sample_ID', 'c_ploidy', 'n_ploidy', 'ground_truth', 'area', 'area_std', 'perimeter', 'perimeter_std',
-                                           'major_axis', 'major_axis_std', 'minor_axis', 'minor_axis_std', 'circularity', 'circularity_std',
-                                           'eccentricity', 'eccentricity_std', 'solidity', 'solidity_std'] )
-    ploidy_values.set_index('Sample_ID', inplace=True)
-
-    ground_truth = pd.read_csv(ploidy_dir, sep=',')
-    ground_truth.set_index('Submitter ID', inplace=True)
-
-    for sub_folder in os.listdir(input_dir):#args.input_dir):
-        sub_input = os.path.join(input_dir, sub_folder)#args.input_dir, sub_folder)
-        ploidy_values = calculate_ploidy(sub_input, ploidy_values, ground_truth, threshold)
-
-    return ploidy_values
-    #os.makedirs(output_dir, mode=0o777, exist_ok=True)   
-    #ploidy_values.to_csv(output_dir)
